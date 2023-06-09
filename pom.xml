@@ -9,7 +9,7 @@
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
     <groupId>com.jack</groupId>
-    <artifactId>FinancialWeb</artifactId>
+    <artifactId>FinancialWebApi</artifactId>
     <version>0.0.1-SNAPSHOT</version>
     <name>FinancialWeb</name>
     <description>FinancialWeb</description>
