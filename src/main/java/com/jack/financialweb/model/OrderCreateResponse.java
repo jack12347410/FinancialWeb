@@ -41,6 +41,4 @@ public class OrderCreateResponse extends OrderCreateBody {
 
     @JsonProperty("Description")
     private String Description;
-
-
 }

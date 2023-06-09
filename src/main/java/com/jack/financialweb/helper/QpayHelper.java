@@ -3,24 +3,23 @@ package com.jack.financialweb.helper;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.jack.financialweb.exception.NotFoundException;
-import com.jack.financialweb.model.OrderCreateBody;
-import com.jack.financialweb.model.OrderCreateRequest;
-import com.jack.financialweb.model.OrderCreateResponse;
+import com.jack.financialweb.model.*;
 import com.jack.financialweb.util.EncryptUtil;
 import com.jack.financialweb.util.HttpUtil;
 import com.jack.financialweb.util.JsonUtil;
 import com.jack.financialweb.util.SysConfigUtil;
+import org.apache.commons.codec.DecoderException;
 import org.apache.commons.codec.digest.DigestUtils;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.math.BigInteger;
+import java.security.GeneralSecurityException;
 import java.util.HashMap;
 import java.util.Map;
 
 @Component
 public class QpayHelper {
-
     /**
      * 取得Nonce
      *
@@ -65,54 +64,57 @@ public class QpayHelper {
     /**
      * 取得安全簽章(Sign)
      *
-     * @param oc
+     * @param order
      * @param nonce
      * @param hashId
      * @return
      */
-    private String getSign(OrderCreateBody oc,
+    private String getSign(Order order,
                            String nonce,
                            String hashId) {
         StringBuilder content = new StringBuilder();
-        content.append(oc.toString())
+        content.append(order.toString())
                 .append(nonce)
                 .append(hashId);
 
+//        System.out.println(content);
         return DigestUtils.sha256Hex(content.toString()).toUpperCase();
     }
 
     /**
      * 取得message
      *
-     * @param oc
+     * @param order
      * @param hashId
      * @param iv
      * @return
      * @throws Exception
      */
-    private String getMessage(OrderCreateBody oc,
+    private String getMessage(Order order,
                               String hashId,
                               String iv) throws Exception {
-        return EncryptUtil.Encrypt(JsonUtil.toJson(oc), hashId, iv).toUpperCase();
+        return EncryptUtil.Encrypt(JsonUtil.toJson(order), hashId, iv).toUpperCase();
     }
 
     /**
-     * 訂單送出
-     * @param ocreq
+     * 發送API並驗證
+     * @param order
+     * @param responseClass
+     * @param apiService
      * @return
      * @throws Exception
      */
-    public String CreateOrder(OrderCreateRequest ocreq) throws Exception {
-        String nonce = getNonce();
+    public String Post(Order order, Class<?> responseClass, String apiService) throws Exception {
         String hashId = getHashId();
+        String nonce = getNonce();
         String iv = getIV(nonce);
-        String sign = getSign(ocreq, nonce, hashId);
-        String message = getMessage(ocreq, hashId, iv);
+        String sign = getSign(order, nonce, hashId);
+        String message = getMessage(order, hashId, iv);
 
         Map<String, String> request = new HashMap<String, String>();
         request.put("Version", "1.0.0");
         request.put("ShopNo", SysConfigUtil.getShopNo());
-        request.put("APIService", "OrderCreate");
+        request.put("APIService", apiService);
         request.put("Sign", sign);
         request.put("Nonce", nonce);
         request.put("Message", message);
@@ -124,13 +126,24 @@ public class QpayHelper {
 //        System.out.println("Message: " + message);
 
         String response = HttpUtil.Post(SysConfigUtil.getOrderApi(), JsonUtil.toJson(request));
-        JsonNode resJson = JsonUtil.toNode(response);
+        QPayResponse qPayResponse = JsonUtil.toObject(response, QPayResponse.class);
+        qPayResponse.setMessage(EncryptUtil.Decrypt(qPayResponse.getMessage(), hashId, getIV(qPayResponse.getNonce())));
 
-        String resNonce = resJson.get("Nonce").asText();
-        String resIv = getIV(resNonce);
-        String resSign = resJson.get("Sign").asText();
-        String resMessage = resJson.get("Message").asText();
-        resMessage = EncryptUtil.Decrypt(resMessage, hashId, resIv);
+        Order orderResponse = (Order) JsonUtil.toObject(qPayResponse.getMessage(), responseClass);
+        //驗證response sign
+        if (qPayResponse.getSign().equals(getSign(orderResponse, qPayResponse.getNonce(), hashId))) {
+            return qPayResponse.getMessage();
+        }
+
+        throw new NotFoundException("簽章驗證失敗");
+
+//        JsonNode resJson = JsonUtil.toNode(response);
+//        String resNonce = resJson.get("Nonce").asText();
+//        String resIv = getIV(resNonce);
+//        String resSign = resJson.get("Sign").asText();
+//        String resMessage = resJson.get("Message").asText();
+//        resMessage = EncryptUtil.Decrypt(resMessage, hashId, resIv);
+
 
 //        System.out.println("response: " + response);
 //        System.out.println("resNonce: " + resNonce);
@@ -138,12 +151,46 @@ public class QpayHelper {
 //        System.out.println("resSign: " + resSign);
 //        System.out.println("resMessage: " + resMessage);
 
-        OrderCreateResponse ocres = JsonUtil.toObject(resMessage, OrderCreateResponse.class);
-        //驗證response sign
-        if (resSign.equals(getSign(ocres, resNonce, hashId))) {
-            return resMessage;
-        }
-
-        throw new NotFoundException(ocres.getDescription() == null? "簽章驗證失敗": ocres.getDescription());
+//        return qPayResponse;
     }
+
+    /**
+     * 加密 send to OrderCreateAPI 並驗證
+     *
+     * @param request
+     * @return
+     * @throws Exception
+     */
+//    public String OrderCreate(OrderCreateRequest request) throws Exception {
+//        String hashId = getHashId();
+//        QPayResponse qPayResponse = Post(request, "OrderCreate", hashId);
+//
+//        OrderCreateResponse orderResponse = JsonUtil.toObject(qPayResponse.getMessage(), OrderCreateResponse.class);
+//        //驗證response sign
+//        if (qPayResponse.getSign().equals(getSign(orderResponse, qPayResponse.getNonce(), hashId))) {
+//            return qPayResponse.getMessage();
+//        }
+//
+//        throw new NotFoundException("簽章驗證失敗");
+//    }
+
+    /**
+     * 加密 send to OrderPayQueryAPI 並驗證
+     * @param request
+     * @return
+     * @throws Exception
+     */
+//    public String OrderPayQuery(OrderPayQueryRequest request) throws Exception {
+//        String hashId = getHashId();
+//        QPayResponse qPayResponse = Post(request, "OrderPayQuery", hashId);
+//
+//        OrderPayQueryResponse orderResponse = JsonUtil.toObject(qPayResponse.getMessage(), OrderPayQueryResponse.class);
+//
+//        //驗證response sign
+//        if (qPayResponse.getSign().equals(getSign(orderResponse, qPayResponse.getNonce(), hashId))) {
+//            return qPayResponse.getMessage();
+//        }
+//
+//        throw new NotFoundException(orderResponse.getDescription() == null ? "簽章驗證失敗" : orderResponse.getDescription());
+//    }
 }
