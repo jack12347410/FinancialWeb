@@ -36,8 +36,8 @@ public class QpayController {
         OrderCreateRequest request =  orderCreateRequestDto.Convert();
         request.setOrderNo(System.currentTimeMillis() + "");
         request.setShopNo(SysConfigUtil.getShopNo());
-//        request.setReturnURL("https://minalife.blog/");
-        request.setReturnURL("http://localhost/jack/v1/api/Qpay/query/");
+        request.setReturnURL("https://minalife.blog/");
+//        request.setReturnURL("http://localhost/jack/v1/api/Qpay/query/");
         request.setBackendURL("https://minalife.blog/");
 
         OrderCreateRequest.CardParam cardParam =  request.new CardParam();
